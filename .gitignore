@@ -1,0 +1,14 @@
+.env
+venv/
+__pycache__/
+*.pyc
+session_string.txt
+power_alert.db
+*.session
+listener_log.txt
+test_notify_log.txt
+backfill_log.txt
+db_check_output.txt
+detector_test_output.txt
+simulate_log.txt
+recent_messages.txt
