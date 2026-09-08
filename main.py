@@ -10,7 +10,14 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 from detector import is_outage_announcement, extract_areas, extract_date, extract_time_blocks
-from database import save_announcement, find_matching_users, record_notification, get_last_announcement_id, get_connection
+from database import (
+    save_announcement,
+    find_matching_users,
+    record_notification,
+    get_last_announcement_id,
+    get_connection,
+    get_todays_announcements,
+)
 
 load_dotenv()
 API_ID = int(os.getenv("API_ID"))
@@ -42,6 +49,44 @@ def home():
 
 def run_web():
     app_web.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
+
+# ---------- Shared notification sender ----------
+async def send_bot_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient() as http_client:
+        await http_client.post(url, json={"chat_id": chat_id, "text": text})
+
+
+async def check_todays_announcements_for_user(user_id, location):
+    """When a user's location is newly confirmed, check if anything posted today already matches."""
+    todays = get_todays_announcements()
+    for announcement_id, raw_text, date_text, areas_text in todays:
+        areas_list = areas_text.split("፣ ")
+        matches = any(
+            location.strip().lower() in area.lower() or area.lower() in location.strip().lower()
+            for area in areas_list
+        )
+        if matches:
+            newly_notified = record_notification(user_id, announcement_id)
+            if newly_notified:
+                time_blocks = extract_time_blocks(raw_text)
+                matching_blocks = [
+                    b for b in time_blocks
+                    if any(
+                        location.strip().lower() in a.lower() or a.lower() in location.strip().lower()
+                        for a in b["areas"]
+                    )
+                ]
+                time_info = "\n\n".join(
+                    f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in matching_blocks
+                )
+                notification_text = (
+                    f"⚡ Power Outage Notice for your area: {location}\n\n"
+                    f"{date_text}\n\n"
+                    f"{time_info}"
+                )
+                await send_bot_message(user_id, notification_text)
 
 
 # ---------- Bot logic ----------
@@ -111,6 +156,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Got it! Your area is set to: {matched_area}\n\n"
                 "You will be notified about power outages here. Use /stop to pause anytime."
             )
+            await check_todays_announcements_for_user(user_id, matched_area)
         else:
             cursor.execute(
                 "UPDATE users SET location = %s, location_status = 'pending' WHERE user_id = %s",
@@ -169,6 +215,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=target_user_id,
         text=f"Your area has been confirmed as: {correct_area}\nYou will now receive power outage alerts for this area.",
     )
+    await check_todays_announcements_for_user(target_user_id, correct_area)
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,12 +264,6 @@ def run_bot():
 
 
 # ---------- Listener logic ----------
-async def send_bot_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient() as http_client:
-        await http_client.post(url, json={"chat_id": chat_id, "text": text})
-
-
 def run_listener():
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 

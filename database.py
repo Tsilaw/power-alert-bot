@@ -125,6 +125,30 @@ def get_last_announcement_id():
     cursor.close()
     conn.close()
     return row[0] if row else None
+def get_todays_announcements():
+    """Returns all announcements saved today (based on when we processed them)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, raw_text, date_text, areas FROM announcements
+        WHERE created_at::date = CURRENT_DATE
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+def get_todays_announcements():
+    """Returns all announcements saved today (based on when we processed them)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, raw_text, date_text, areas FROM announcements
+        WHERE created_at::date = CURRENT_DATE
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
 
 
 if __name__ == "__main__":
