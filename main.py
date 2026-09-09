@@ -158,8 +158,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Welcome back! Notifications are ON.\n\n"
             f"📍 Your saved location(s):\n{loc_str}\n\n"
-            "👨‍💻 Developer: @MahammedAbdurahman\n"
-            "📢 Join our channel: @DesignDeploy\n\n"
             "Commands:\n"
             "/addlocation - Add another location\n"
             "/setlocation - Reset location list\n"
@@ -211,8 +209,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             location_mode.pop(user_id, None)
             await update.message.reply_text(
                 f"Got it! Saved area: {matched_area}\n\n"
-                "You will be notified about power outages here. Use /addlocation to add more areas.\n\n"
-                "📢 Don't forget to join our channel @DesignDeploy for updates!"
+                "You will be notified about power outages here. Use /addlocation to add more areas."
             )
             await check_todays_announcements_for_user(user_id, matched_area)
         else:
@@ -222,8 +219,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(
                 f"Thanks! We couldn't automatically recognize \"{text}\" as a known area.\n"
-                "It has been sent for review, and you'll be notified once it's confirmed.\n\n"
-                "📢 In the meantime, join our channel @DesignDeploy!"
+                "It has been sent for review, and you'll be notified once it's confirmed."
             )
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
@@ -350,8 +346,6 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📍 **Your Saved Location(s):**\n{loc_str}\n\n"
         f"Notifications: **{status_text}**\n\n"
-        f"👨‍💻 Developer: @MahammedAbdurahman\n"
-        f"📢 Channel: @DesignDeploy\n\n"
         "Commands:\n"
         "/addlocation - Add another location\n"
         "/setlocation - Reset location list\n"
