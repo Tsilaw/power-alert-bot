@@ -17,6 +17,12 @@ from database import (
     get_last_announcement_id,
     get_connection,
     get_todays_announcements,
+    add_user_location,
+    get_user_locations,
+    delete_user_locations,
+    update_user_location_status,
+    learn_location,
+    get_learned_match,
 )
 
 load_dotenv()
@@ -39,6 +45,7 @@ KNOWN_AREAS = [
 ]
 
 waiting_for_location = set()
+location_mode = {}  # user_id -> 'set' or 'add'
 
 # ---------- Tiny web server (keeps Render awake) ----------
 app_web = Flask(__name__)
@@ -68,7 +75,7 @@ async def check_todays_announcements_for_user(user_id, location):
             for area in areas_list
         )
         if matches:
-            newly_notified = record_notification(user_id, announcement_id)
+            newly_notified = record_notification(user_id, announcement_id, location)
             if newly_notified:
                 time_blocks = extract_time_blocks(raw_text)
                 matching_blocks = [
@@ -80,9 +87,10 @@ async def check_todays_announcements_for_user(user_id, location):
                 ]
                 time_info = "\n\n".join(
                     f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in matching_blocks
-                )
+                ) if matching_blocks else f"Areas: {areas_text}"
+
                 notification_text = (
-                    f"⚡ Power Outage Notice for your area: {location}\n\n"
+                    f"⚡ Today's Existing Outage Notice for your area ({location}):\n\n"
                     f"{date_text}\n\n"
                     f"{time_info}"
                 )
@@ -102,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT location FROM users WHERE user_id = %s", (user_id,))
+    cursor.execute("SELECT is_active FROM users WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
 
     if row is None:
@@ -111,27 +119,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (user_id,),
         )
         conn.commit()
-        waiting_for_location.add(user_id)
-        await update.message.reply_text(
-            "Welcome! I will notify you about power outages in your area.\n\n"
-            "Please type the name of your area (English or Amharic), e.g. Ayat or አያት:"
-        )
     else:
         cursor.execute("UPDATE users SET is_active = 1 WHERE user_id = %s", (user_id,))
         conn.commit()
-        location = row[0] or "not set yet"
-        await update.message.reply_text(
-            f"Welcome back! Notifications are now ON.\nYour current area: {location}\n\n"
-            "Use /setlocation to change it, or /stop to pause notifications."
-        )
     cursor.close()
     conn.close()
+
+    locs = get_user_locations(user_id)
+
+    if not locs:
+        waiting_for_location.add(user_id)
+        location_mode[user_id] = "set"
+        await update.message.reply_text(
+            "Welcome! I will notify you about power outages in your area.\n\n"
+            "Please type the name of your area (English or Amharic), e.g. Bole, Wingate, or ቦሌ:"
+        )
+    else:
+        loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
+        await update.message.reply_text(
+            f"Welcome back! Notifications are ON.\n\n"
+            f"📍 Your saved location(s):\n{loc_str}\n\n"
+            "Commands:\n"
+            "/addlocation - Add another location\n"
+            "/setlocation - Reset location list\n"
+            "/todayalerts - See today's outage announcements\n"
+            "/status - Check your settings\n"
+            "/stop - Pause notifications"
+        )
 
 
 async def setlocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     waiting_for_location.add(user_id)
-    await update.message.reply_text("Okay, please type your new area name:")
+    location_mode[user_id] = "set"
+    await update.message.reply_text(
+        "Okay! Setting your location will replace your existing list.\n"
+        "Please type your new area name:"
+    )
+
+
+async def addlocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    waiting_for_location.add(user_id)
+    location_mode[user_id] = "add"
+    await update.message.reply_text(
+        "Sure! Please type an additional area name you would like to receive alerts for:"
+    )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,33 +172,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if user_id in waiting_for_location:
+        mode = location_mode.get(user_id, "set")
+
+        # 1. Check direct match against KNOWN_AREAS
         matched_area = find_matching_area(text)
-        conn = get_connection()
-        cursor = conn.cursor()
+
+        # 2. If not found in KNOWN_AREAS, check learned_locations table
+        if not matched_area:
+            matched_area = get_learned_match(text)
+
+        if mode == "set":
+            delete_user_locations(user_id)
 
         if matched_area:
-            cursor.execute(
-                "UPDATE users SET location = %s, location_status = 'confirmed' WHERE user_id = %s",
-                (matched_area, user_id),
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
+            add_user_location(user_id, matched_area, status="confirmed")
             waiting_for_location.remove(user_id)
+            location_mode.pop(user_id, None)
             await update.message.reply_text(
-                f"Got it! Your area is set to: {matched_area}\n\n"
-                "You will be notified about power outages here. Use /stop to pause anytime."
+                f"Got it! Saved area: {matched_area}\n\n"
+                "You will be notified about power outages here. Use /addlocation to add more areas."
             )
             await check_todays_announcements_for_user(user_id, matched_area)
         else:
-            cursor.execute(
-                "UPDATE users SET location = %s, location_status = 'pending' WHERE user_id = %s",
-                (text, user_id),
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
+            add_user_location(user_id, text, status="pending")
             waiting_for_location.remove(user_id)
+            location_mode.pop(user_id, None)
 
             await update.message.reply_text(
                 f"Thanks! We couldn't automatically recognize \"{text}\" as a known area.\n"
@@ -183,8 +214,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     else:
         await update.message.reply_text(
-            "I didn't understand that. Use /setlocation to change your area, "
-            "or /status to check your settings."
+            "I didn't understand that. Use /setlocation or /addlocation to update your areas, "
+            "or /todayalerts to see today's outage announcements."
         )
 
 
@@ -198,24 +229,66 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target_user_id = int(context.args[0])
-    correct_area = " ".join(context.args[1:])
+    correct_area = " ".join(context.args[1:]).strip()
 
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET location = %s, location_status = 'confirmed' WHERE user_id = %s",
-        (correct_area, target_user_id),
+    locs = get_user_locations(target_user_id)
+    pending_text = None
+    for loc, status in locs:
+        if status == "pending":
+            pending_text = loc
+            break
+
+    if pending_text:
+        # Learn the mapping so future users typing this exact text get auto-approved!
+        learn_location(pending_text, correct_area)
+        # Also delete the old pending location entry
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM user_locations WHERE user_id = %s AND location = %s",
+            (target_user_id, pending_text),
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    # Learn direct name as well
+    learn_location(correct_area, correct_area)
+
+    # Add confirmed location
+    add_user_location(target_user_id, correct_area, status="confirmed")
+
+    await update.message.reply_text(
+        f"Approved! Saved mapping: '{pending_text or correct_area}' -> '{correct_area}'.\n"
+        f"User {target_user_id} area set to: {correct_area}"
     )
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text(f"Approved. User {target_user_id} area set to: {correct_area}")
     await context.bot.send_message(
         chat_id=target_user_id,
         text=f"Your area has been confirmed as: {correct_area}\nYou will now receive power outage alerts for this area.",
     )
     await check_todays_announcements_for_user(target_user_id, correct_area)
+
+
+async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    todays = get_todays_announcements()
+    if not todays:
+        await update.message.reply_text("No power outage announcements recorded today so far.")
+        return
+
+    messages = []
+    for ann_id, raw_text, date_text, areas_text in todays:
+        time_blocks = extract_time_blocks(raw_text)
+        if time_blocks:
+            details = "\n".join(
+                f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in time_blocks
+            )
+        else:
+            details = f"Areas: {areas_text}"
+
+        messages.append(f"⚡ Announcement #{ann_id}\n📅 {date_text}\n{details}")
+
+    full_response = "\n\n───────────────\n\n".join(messages)
+    await update.message.reply_text(f"📢 Today's Power Outage Announcements:\n\n{full_response}")
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,10 +306,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT location, is_active, location_status FROM users WHERE user_id = %s",
-        (user_id,),
-    )
+    cursor.execute("SELECT is_active FROM users WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -245,17 +315,31 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You haven't started yet. Send /start first.")
         return
 
-    location, is_active, location_status = row
-    location_text = location or "not set yet"
+    is_active = row[0]
     status_text = "ON" if is_active == 1 else "PAUSED"
-    pending_note = " (pending confirmation)" if location_status == "pending" else ""
-    await update.message.reply_text(f"Area: {location_text}{pending_note}\nNotifications: {status_text}")
+
+    locs = get_user_locations(user_id)
+    if not locs:
+        loc_str = "No saved locations."
+    else:
+        loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
+
+    await update.message.reply_text(
+        f"📍 Your Saved Location(s):\n{loc_str}\n\n"
+        f"Notifications: {status_text}\n\n"
+        "Commands:\n"
+        "/addlocation - Add another location\n"
+        "/setlocation - Reset location list\n"
+        "/todayalerts - See today's outage announcements"
+    )
 
 
 def run_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("setlocation", setlocation))
+    application.add_handler(CommandHandler("addlocation", addlocation))
+    application.add_handler(CommandHandler("todayalerts", todayalerts))
     application.add_handler(CommandHandler("stop", stop))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("approve", approve))
@@ -291,7 +375,7 @@ def run_listener():
                 matched_users = find_matching_users(areas)
 
                 for user_id, location in matched_users:
-                    newly_notified = record_notification(user_id, announcement_id)
+                    newly_notified = record_notification(user_id, announcement_id, location)
                     if newly_notified:
                         matching_blocks = [
                             b for b in time_blocks
@@ -302,9 +386,9 @@ def run_listener():
                         ]
                         time_info = "\n\n".join(
                             f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in matching_blocks
-                        )
+                        ) if matching_blocks else f"Areas: {', '.join(areas)}"
                         notification_text = (
-                            f"⚡ Power Outage Notice for your area: {location}\n\n"
+                            f"⚡ Power Outage Notice for your area ({location}):\n\n"
                             f"{date_text}\n\n"
                             f"{time_info}"
                         )
