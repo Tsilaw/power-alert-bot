@@ -59,10 +59,13 @@ def run_web():
 
 
 # ---------- Shared notification sender ----------
-async def send_bot_message(chat_id, text):
+async def send_bot_message(chat_id, text, parse_mode=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     async with httpx.AsyncClient() as http_client:
-        await http_client.post(url, json={"chat_id": chat_id, "text": text})
+        await http_client.post(url, json=payload)
 
 
 async def check_todays_announcements_for_user(user_id, location):
@@ -113,7 +116,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT is_active FROM users WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
 
-    if row is None:
+    is_new_user = (row is None)
+
+    if is_new_user:
         cursor.execute(
             "INSERT INTO users (user_id, location, is_active) VALUES (%s, NULL, 1)",
             (user_id,),
@@ -130,15 +135,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not locs:
         waiting_for_location.add(user_id)
         location_mode[user_id] = "set"
-        await update.message.reply_text(
-            "Welcome! I will notify you about power outages in your area.\n\n"
-            "Please type the name of your area (English or Amharic), e.g. Bole, Wingate, or ቦሌ:"
+
+        welcome_text = (
+            "⚡ **Welcome to Ethiopia Power Alert Bot!** 🇪🇹\n\n"
+            "💡 **What This Bot Does & How It Helps:**\n"
+            "Unexpected power outages disrupt daily schedules, work, and business across Ethiopia. "
+            "This bot automatically monitors official Ethiopian Electric Utility (@eeuethiopia) announcements "
+            "24/7, extracts outage schedules, and instantly notifies you whenever power interruptions affect your area!\n\n"
+            "🛠️ **Key Features:**\n"
+            "• Real-time automated outage alerts for your saved area\n"
+            "• Save multiple locations (Home, Work, Family area, etc.)\n"
+            "• Check all today's outage announcements using `/todayalerts`\n\n"
+            "👨‍💻 **Developer:** @MahammedAbdurahman\n"
+            "📢 **Official Channel:** Please join @DesignDeploy for project updates & new bots!\n\n"
+            "───────────────────\n"
+            "📍 **Get Started:**\n"
+            "Please type the name of your area (in English or Amharic), e.g. **Bole**, **Wingate**, or **ቦሌ**:"
         )
+        await update.message.reply_text(welcome_text, parse_mode="Markdown")
     else:
         loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
         await update.message.reply_text(
             f"Welcome back! Notifications are ON.\n\n"
             f"📍 Your saved location(s):\n{loc_str}\n\n"
+            "👨‍💻 Developer: @MahammedAbdurahman\n"
+            "📢 Join our channel: @DesignDeploy\n\n"
             "Commands:\n"
             "/addlocation - Add another location\n"
             "/setlocation - Reset location list\n"
@@ -190,7 +211,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             location_mode.pop(user_id, None)
             await update.message.reply_text(
                 f"Got it! Saved area: {matched_area}\n\n"
-                "You will be notified about power outages here. Use /addlocation to add more areas."
+                "You will be notified about power outages here. Use /addlocation to add more areas.\n\n"
+                "📢 Don't forget to join our channel @DesignDeploy for updates!"
             )
             await check_todays_announcements_for_user(user_id, matched_area)
         else:
@@ -200,7 +222,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(
                 f"Thanks! We couldn't automatically recognize \"{text}\" as a known area.\n"
-                "It has been sent for review, and you'll be notified once it's confirmed."
+                "It has been sent for review, and you'll be notified once it's confirmed.\n\n"
+                "📢 In the meantime, join our channel @DesignDeploy!"
             )
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
@@ -325,12 +348,16 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
 
     await update.message.reply_text(
-        f"📍 Your Saved Location(s):\n{loc_str}\n\n"
-        f"Notifications: {status_text}\n\n"
+        f"📍 **Your Saved Location(s):**\n{loc_str}\n\n"
+        f"Notifications: **{status_text}**\n\n"
+        f"👨‍💻 Developer: @MahammedAbdurahman\n"
+        f"📢 Channel: @DesignDeploy\n\n"
         "Commands:\n"
         "/addlocation - Add another location\n"
         "/setlocation - Reset location list\n"
-        "/todayalerts - See today's outage announcements"
+        "/todayalerts - See today's outage announcements\n"
+        "/stop - Pause notifications",
+        parse_mode="Markdown"
     )
 
 
