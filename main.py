@@ -10,7 +10,7 @@ from telethon.sessions import StringSession
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-from detector import is_outage_announcement, extract_areas, extract_date, extract_time_blocks
+from detector import is_outage_announcement, extract_areas, extract_date, extract_time_blocks, is_area_match
 from database import (
     save_announcement,
     find_matching_users,
@@ -103,7 +103,7 @@ async def check_todays_announcements_for_user(user_id, location):
     for announcement_id, raw_text, date_text, areas_text in todays:
         areas_list = areas_text.split("፣ ")
         matches = any(
-            location.strip().lower() in area.lower() or area.lower() in location.strip().lower()
+            is_area_match(location, area)
             for area in areas_list
         )
         if matches:
@@ -113,7 +113,7 @@ async def check_todays_announcements_for_user(user_id, location):
                 matching_blocks = [
                     b for b in time_blocks
                     if any(
-                        location.strip().lower() in a.lower() or a.lower() in location.strip().lower()
+                        is_area_match(location, a)
                         for a in b["areas"]
                     )
                 ]
@@ -386,11 +386,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not locs:
         loc_str = "No saved locations."
     else:
-        loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
+        loc_str = "\n".join(f"• <b>{html.escape(loc)}</b> ({html.escape(loc_status)})" for loc, loc_status in locs)
 
     await update.message.reply_text(
         f"📍 <b>Your Saved Location(s):</b>\n{loc_str}\n\n"
-        f"Notifications: <b>{status_text}</b>\n\n"
+        f"Notifications: <b>{html.escape(status_text)}</b>\n\n"
         "Commands:\n"
         "/addlocation - Add another location\n"
         "/setlocation - Reset location list\n"
@@ -446,7 +446,7 @@ def run_listener():
                         matching_blocks = [
                             b for b in time_blocks
                             if any(
-                                location.strip().lower() in a.lower() or a.lower() in location.strip().lower()
+                                is_area_match(location, a)
                                 for a in b["areas"]
                             )
                         ]

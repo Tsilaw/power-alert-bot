@@ -1,6 +1,24 @@
 OUTAGE_KEYWORDS = ["የኃይል አቅርቦት"]
 INTERRUPTION_KEYWORDS = ["ቋረጥ"]
 
+AREA_ALIASES = {
+    "bole": ["ቦሌ", "bole"],
+    "ቦሌ": ["ቦሌ", "bole"],
+    "wingate": ["ዊንጌት", "wingate"],
+    "ዊንጌት": ["ዊንጌት", "wingate"],
+    "piassa": ["ፒያሳ", "piassa", "piazza"],
+    "piazza": ["ፒያሳ", "piassa", "piazza"],
+    "ፒያሳ": ["ፒያሳ", "piassa", "piazza"],
+    "megenagna": ["መገናኛ", "megenagna"],
+    "መገናኛ": ["መገናኛ", "megenagna"],
+    "koye": ["ኮዬ", "koye"],
+    "ኮዬ": ["ኮዬ", "koye"],
+    "alembank": ["አለምባንክ", "alembank"],
+    "አለምባንክ": ["አለምባንክ", "alembank"],
+    "bethel": ["ቤተል", "bethel"],
+    "ቤተል": ["ቤተል", "bethel"],
+}
+
 
 def is_outage_announcement(text: str) -> bool:
     if not text:
@@ -51,3 +69,26 @@ def extract_date(text: str) -> str:
         if "ቀን" in line:
             return line.strip()
     return ""
+
+
+def is_area_match(user_location: str, target_area: str) -> bool:
+    if not user_location or not target_area:
+        return False
+
+    u_loc = user_location.strip().lower()
+    t_area = target_area.strip().lower()
+
+    if u_loc in t_area or t_area in u_loc:
+        return True
+
+    user_aliases = AREA_ALIASES.get(u_loc, [u_loc])
+    for alias in user_aliases:
+        if alias.lower() in t_area or t_area in alias.lower():
+            return True
+
+    target_aliases = AREA_ALIASES.get(t_area, [t_area])
+    for t_alias in target_aliases:
+        if u_loc in t_alias.lower() or t_alias.lower() in u_loc:
+            return True
+
+    return False

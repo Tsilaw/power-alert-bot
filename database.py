@@ -1,6 +1,7 @@
 import os
 import psycopg2
 from dotenv import load_dotenv
+from detector import is_area_match
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -225,7 +226,7 @@ def find_matching_users(areas_list):
     matched = []
     for user_id, location in all_user_locs:
         for area in areas_list:
-            if location.strip().lower() in area.lower() or area.lower() in location.strip().lower():
+            if is_area_match(location, area):
                 matched.append((user_id, location))
                 break
 
