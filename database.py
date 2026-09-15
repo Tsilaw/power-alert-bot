@@ -81,6 +81,16 @@ def create_tables():
         ALTER TABLE sent_notifications ADD COLUMN IF NOT EXISTS location TEXT;
     """)
 
+    # Drop old 2-column constraint if present and add 3-column unique constraint
+    try:
+        cursor.execute("ALTER TABLE sent_notifications DROP CONSTRAINT IF EXISTS sent_notifications_user_id_announcement_id_key;")
+        cursor.execute("ALTER TABLE sent_notifications DROP CONSTRAINT IF EXISTS sent_notifications_user_announcement_loc_key;")
+        cursor.execute("ALTER TABLE sent_notifications ADD CONSTRAINT sent_notifications_user_announcement_loc_key UNIQUE (user_id, announcement_id, location);")
+    except Exception as e:
+        conn.rollback()
+        conn = get_connection()
+        cursor = conn.cursor()
+
     # Migrate existing single user locations into user_locations table
     cursor.execute("""
         INSERT INTO user_locations (user_id, location, status)
@@ -241,12 +251,14 @@ def record_notification(user_id, announcement_id, location):
         cursor.execute("""
             INSERT INTO sent_notifications (user_id, announcement_id, location)
             VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, announcement_id, location) DO NOTHING
         """, (user_id, announcement_id, location))
+        inserted = (cursor.rowcount > 0)
         conn.commit()
         cursor.close()
         conn.close()
-        return True
-    except psycopg2.errors.UniqueViolation:
+        return inserted
+    except Exception:
         conn.rollback()
         cursor.close()
         conn.close()
@@ -264,12 +276,12 @@ def get_last_announcement_id():
 
 
 def get_todays_announcements():
-    """Returns all announcements saved today (based on when we processed them)."""
+    """Returns all announcements saved today (based on when we processed them or within 24h)."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT id, raw_text, date_text, areas FROM announcements
-        WHERE created_at::date = CURRENT_DATE
+        WHERE created_at >= NOW() - INTERVAL '24 hours' OR created_at::date = CURRENT_DATE
         ORDER BY id DESC
     """)
     rows = cursor.fetchall()

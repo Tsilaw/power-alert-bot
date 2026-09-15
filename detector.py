@@ -4,8 +4,8 @@ INTERRUPTION_KEYWORDS = ["ቋረጥ"]
 AREA_ALIASES = {
     "bole": ["ቦሌ", "bole"],
     "ቦሌ": ["ቦሌ", "bole"],
-    "wingate": ["ዊንጌት", "wingate"],
-    "ዊንጌት": ["ዊንጌት", "wingate"],
+    "wingate": ["ዊንጌት", "ዊን ጌት", "wingate"],
+    "ዊንጌት": ["ዊንጌት", "ዊን ጌት", "wingate"],
     "piassa": ["ፒያሳ", "piassa", "piazza"],
     "piazza": ["ፒያሳ", "piassa", "piazza"],
     "ፒያሳ": ["ፒያሳ", "piassa", "piazza"],
@@ -13,17 +13,18 @@ AREA_ALIASES = {
     "መገናኛ": ["መገናኛ", "megenagna"],
     "koye": ["ኮዬ", "koye"],
     "ኮዬ": ["ኮዬ", "koye"],
-    "alembank": ["አለምባንክ", "alembank"],
-    "አለምባንክ": ["አለምባንክ", "alembank"],
-    "bethel": ["ቤተል", "bethel"],
-    "ቤተል": ["ቤተል", "bethel"],
+    "alembank": ["አለምባንክ", "አለም ባንክ", "ዓለም ባንክ", "alembank"],
+    "አለምባንክ": ["አለምባንክ", "አለም ባንክ", "ዓለም ባንክ", "alembank"],
+    "አለም ባንክ": ["አለምባንክ", "አለም ባንክ", "ዓለም ባንክ", "alembank"],
+    "bethel": ["ቤተል", "ቤቴል", "bethel"],
+    "ቤተል": ["ቤተል", "ቤቴል", "bethel"],
     "bello": ["ቤላ", "bello", "bella"],
     "ቤላ": ["ቤላ", "bello", "bella"],
     "sebeta": ["ሰበታ", "sebeta"],
     "ሰበታ": ["ሰበታ", "sebeta"],
-    "alemgena": ["አለምገና", "ዓለምገና", "alemgena"],
-    "አለምገና": ["አለምገና", "ዓለምገና", "alemgena"],
-    "ዓለምገና": ["አለምገና", "ዓለምገና", "alemgena"],
+    "alemgena": ["አለምገና", "ዓለምገና", "አለም ገና", "alemgena"],
+    "አለምገና": ["አለምገና", "ዓለምገና", "አለም ገና", "alemgena"],
+    "ዓለምገና": ["አለምገና", "ዓለምገና", "አለም ገና", "alemgena"],
 }
 
 
@@ -82,20 +83,27 @@ def is_area_match(user_location: str, target_area: str) -> bool:
     if not user_location or not target_area:
         return False
 
-    u_loc = user_location.strip().lower()
-    t_area = target_area.strip().lower()
+    u_raw = user_location.strip().lower()
+    t_raw = target_area.strip().lower()
 
-    if u_loc in t_area or t_area in u_loc:
+    u_norm = u_raw.replace(" ", "")
+    t_norm = t_raw.replace(" ", "")
+
+    if u_raw in t_raw or t_raw in u_raw or u_norm in t_norm or t_norm in u_norm:
         return True
 
-    user_aliases = AREA_ALIASES.get(u_loc, [u_loc])
+    user_aliases = AREA_ALIASES.get(u_raw, [u_raw])
     for alias in user_aliases:
-        if alias.lower() in t_area or t_area in alias.lower():
+        a_raw = alias.strip().lower()
+        a_norm = a_raw.replace(" ", "")
+        if a_raw in t_raw or t_raw in a_raw or a_norm in t_norm or t_norm in a_norm:
             return True
 
-    target_aliases = AREA_ALIASES.get(t_area, [t_area])
+    target_aliases = AREA_ALIASES.get(t_raw, [t_raw])
     for t_alias in target_aliases:
-        if u_loc in t_alias.lower() or t_alias.lower() in u_loc:
+        a_raw = t_alias.strip().lower()
+        a_norm = a_raw.replace(" ", "")
+        if u_raw in a_raw or a_raw in u_raw or u_norm in a_norm or a_norm in u_norm:
             return True
 
     return False
