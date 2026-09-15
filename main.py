@@ -72,14 +72,31 @@ async def send_bot_message(chat_id, text, parse_mode=None):
 def format_user_notification(location, date_text, matching_blocks, raw_areas_text, is_retroactive=False):
     esc_location = html.escape(location)
     esc_date = html.escape(date_text) if date_text else ""
-    header = "⚡ <b>POWER OUTAGE NOTICE</b> ⚡" if not is_retroactive else "⚡ <b>EXISTING OUTAGE NOTICE FOR TODAY</b> ⚡"
+    header = "⚡ <b>POWER OUTAGE ALERT!</b> ⚡" if not is_retroactive else "⚡ <b>EXISTING OUTAGE NOTICE FOR TODAY</b> ⚡"
 
     if matching_blocks:
         block_list = []
         for b in matching_blocks:
             t_str = html.escape(b['time'])
-            areas_str = ", ".join(f"<b>{html.escape(a)}</b>" for a in b['areas'])
-            block_list.append(f"⏰ <b>Time Schedule:</b> {t_str}\n📍 <b>Matching Areas:</b> {areas_str}")
+            
+            matched_areas = [a for a in b['areas'] if is_area_match(location, a)]
+            other_areas = [a for a in b['areas'] if not is_area_match(location, a)]
+
+            if matched_areas:
+                matched_str = ", ".join(f"<b><u>{html.escape(m)}</u></b>" for m in matched_areas)
+            else:
+                matched_str = f"<b><u>{esc_location}</u></b>"
+
+            if other_areas:
+                other_str = "\n📍 <b>Other Affected Areas:</b> " + ", ".join(f"{html.escape(a)}" for a in other_areas)
+            else:
+                other_str = ""
+
+            block_list.append(
+                f"⏰ <b>Outage Time:</b> {t_str}\n"
+                f"🎯 <b>Matched Location:</b> {matched_str}"
+                f"{other_str}"
+            )
         schedule_info = "\n\n".join(block_list)
     else:
         esc_areas = ", ".join(f"<b>{html.escape(a)}</b>" for a in raw_areas_text.split("፣ "))
@@ -89,10 +106,10 @@ def format_user_notification(location, date_text, matching_blocks, raw_areas_tex
 
     text = (
         f"{header}\n\n"
-        f"📍 <b>YOUR LOCATION:</b> <code>{esc_location}</code>\n"
+        f"👤 <b>Your Saved Location:</b> <code>{esc_location}</code>\n"
         f"{date_info}"
         f"{schedule_info}\n\n"
-        f"⚠️ <b>NOTICE:</b> There will be a power outage in your area, so please be ready!"
+        f"⚠️ <b>ATTENTION:</b> There will be a power outage in your area during the time listed above, so please be ready and charge your devices!"
     )
     return text
 
@@ -101,7 +118,7 @@ async def check_todays_announcements_for_user(user_id, location):
     """When a user's location is newly confirmed, check if anything posted today already matches."""
     todays = get_todays_announcements()
     for announcement_id, raw_text, date_text, areas_text in todays:
-        areas_list = areas_text.split("፣ ")
+        areas_list = extract_areas(raw_text) if raw_text else areas_text.split("፣ ")
         matches = any(
             is_area_match(location, area)
             for area in areas_list

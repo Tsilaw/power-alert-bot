@@ -17,6 +17,13 @@ AREA_ALIASES = {
     "አለምባንክ": ["አለምባንክ", "alembank"],
     "bethel": ["ቤተል", "bethel"],
     "ቤተል": ["ቤተል", "bethel"],
+    "bello": ["ቤላ", "bello", "bella"],
+    "ቤላ": ["ቤላ", "bello", "bella"],
+    "sebeta": ["ሰበታ", "sebeta"],
+    "ሰበታ": ["ሰበታ", "sebeta"],
+    "alemgena": ["አለምገና", "ዓለምገና", "alemgena"],
+    "አለምገና": ["አለምገና", "ዓለምገና", "alemgena"],
+    "ዓለምገና": ["አለምገና", "ዓለምገና", "alemgena"],
 }
 
 
@@ -34,17 +41,17 @@ def extract_time_blocks(text: str) -> list:
     current_areas = []
 
     for line in text.split("\n"):
-        line = line.strip()
+        line = line.replace("\xa0", " ").replace("\ufeff", "").strip()
 
-        if line.startswith("✅"):
-            if current_time is not None:
+        if "✅" in line:
+            if current_time is not None and (current_time or current_areas):
                 blocks.append({"time": current_time, "areas": current_areas})
             current_time = line.replace("✅", "").strip()
             current_areas = []
 
-        elif line.startswith("👉") and current_time is not None:
+        elif "👉" in line and current_time is not None:
             cleaned = line.replace("👉", "").strip()
-            parts = cleaned.split("፣")
+            parts = cleaned.replace(",", "፣").split("፣")
             for part in parts:
                 part = part.strip()
                 part = part.replace("እና አካባቢው", "").strip()
