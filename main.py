@@ -1,4 +1,5 @@
 import os
+import html
 import threading
 import asyncio
 import httpx
@@ -68,6 +69,34 @@ async def send_bot_message(chat_id, text, parse_mode=None):
         await http_client.post(url, json=payload)
 
 
+def format_user_notification(location, date_text, matching_blocks, raw_areas_text, is_retroactive=False):
+    esc_location = html.escape(location)
+    esc_date = html.escape(date_text) if date_text else ""
+    header = "⚡ <b>POWER OUTAGE NOTICE</b> ⚡" if not is_retroactive else "⚡ <b>EXISTING OUTAGE NOTICE FOR TODAY</b> ⚡"
+
+    if matching_blocks:
+        block_list = []
+        for b in matching_blocks:
+            t_str = html.escape(b['time'])
+            areas_str = ", ".join(f"<b>{html.escape(a)}</b>" for a in b['areas'])
+            block_list.append(f"⏰ <b>Time Schedule:</b> {t_str}\n📍 <b>Matching Areas:</b> {areas_str}")
+        schedule_info = "\n\n".join(block_list)
+    else:
+        esc_areas = ", ".join(f"<b>{html.escape(a)}</b>" for a in raw_areas_text.split("፣ "))
+        schedule_info = f"📍 <b>Affected Areas:</b> {esc_areas}"
+
+    date_info = f"📅 <b>Date:</b> {esc_date}\n" if esc_date else ""
+
+    text = (
+        f"{header}\n\n"
+        f"📍 <b>YOUR LOCATION:</b> <code>{esc_location}</code>\n"
+        f"{date_info}"
+        f"{schedule_info}\n\n"
+        f"⚠️ <b>NOTICE:</b> There will be a power outage in your area, so please be ready!"
+    )
+    return text
+
+
 async def check_todays_announcements_for_user(user_id, location):
     """When a user's location is newly confirmed, check if anything posted today already matches."""
     todays = get_todays_announcements()
@@ -88,16 +117,14 @@ async def check_todays_announcements_for_user(user_id, location):
                         for a in b["areas"]
                     )
                 ]
-                time_info = "\n\n".join(
-                    f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in matching_blocks
-                ) if matching_blocks else f"Areas: {areas_text}"
-
-                notification_text = (
-                    f"⚡ Today's Existing Outage Notice for your area ({location}):\n\n"
-                    f"{date_text}\n\n"
-                    f"{time_info}"
+                notification_text = format_user_notification(
+                    location=location,
+                    date_text=date_text,
+                    matching_blocks=matching_blocks,
+                    raw_areas_text=areas_text,
+                    is_retroactive=True
                 )
-                await send_bot_message(user_id, notification_text)
+                await send_bot_message(user_id, notification_text, parse_mode="HTML")
 
 
 # ---------- Bot logic ----------
@@ -297,17 +324,35 @@ async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = []
     for ann_id, raw_text, date_text, areas_text in todays:
         time_blocks = extract_time_blocks(raw_text)
+
         if time_blocks:
-            details = "\n".join(
-                f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in time_blocks
-            )
+            blocks_formatted = []
+            for b in time_blocks:
+                time_str = html.escape(b['time'])
+                areas_bullets = "\n".join(f"   • <b>{html.escape(a)}</b>" for a in b['areas']) if b['areas'] else "   • None specified"
+                blocks_formatted.append(
+                    f"⏰ <b>Time Schedule:</b> {time_str}\n"
+                    f"📍 <b>Affected Locations:</b>\n{areas_bullets}"
+                )
+            schedule_details = "\n\n".join(blocks_formatted)
         else:
-            details = f"Areas: {areas_text}"
+            areas_list = areas_text.split("፣ ")
+            areas_bullets = "\n".join(f"   • <b>{html.escape(a)}</b>" for a in areas_list)
+            schedule_details = f"📍 <b>Affected Locations:</b>\n{areas_bullets}"
 
-        messages.append(f"⚡ Announcement #{ann_id}\n📅 {date_text}\n{details}")
+        date_line = f"📅 <b>Date:</b> {html.escape(date_text)}\n" if date_text else ""
 
-    full_response = "\n\n───────────────\n\n".join(messages)
-    await update.message.reply_text(f"📢 Today's Power Outage Announcements:\n\n{full_response}")
+        messages.append(
+            f"⚡ <b>Announcement #{ann_id}</b>\n"
+            f"{date_line}"
+            f"{schedule_details}"
+        )
+
+    full_response = "\n\n═══════════════════\n\n".join(messages)
+    await update.message.reply_text(
+        f"📢 <b>TODAY'S POWER OUTAGE ANNOUNCEMENTS</b> 🇪🇹\n\n{full_response}",
+        parse_mode="HTML"
+    )
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -344,14 +389,14 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loc_str = "\n".join(f"• {loc} ({status})" for loc, status in locs)
 
     await update.message.reply_text(
-        f"📍 **Your Saved Location(s):**\n{loc_str}\n\n"
-        f"Notifications: **{status_text}**\n\n"
+        f"📍 <b>Your Saved Location(s):</b>\n{loc_str}\n\n"
+        f"Notifications: <b>{status_text}</b>\n\n"
         "Commands:\n"
         "/addlocation - Add another location\n"
         "/setlocation - Reset location list\n"
         "/todayalerts - See today's outage announcements\n"
         "/stop - Pause notifications",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -405,15 +450,14 @@ def run_listener():
                                 for a in b["areas"]
                             )
                         ]
-                        time_info = "\n\n".join(
-                            f"🕒 {b['time']}\nAreas: {', '.join(b['areas'])}" for b in matching_blocks
-                        ) if matching_blocks else f"Areas: {', '.join(areas)}"
-                        notification_text = (
-                            f"⚡ Power Outage Notice for your area ({location}):\n\n"
-                            f"{date_text}\n\n"
-                            f"{time_info}"
+                        notification_text = format_user_notification(
+                            location=location,
+                            date_text=date_text,
+                            matching_blocks=matching_blocks,
+                            raw_areas_text=", ".join(areas),
+                            is_retroactive=False
                         )
-                        await send_bot_message(user_id, notification_text)
+                        await send_bot_message(user_id, notification_text, parse_mode="HTML")
 
     with client:
         print("Listener is running.")
