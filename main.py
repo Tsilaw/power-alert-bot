@@ -422,8 +422,13 @@ async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     full_response = "\n\n═══════════════════\n\n".join(messages)
+    tip_text = (
+        "\n\n💡 <b>How to test your alerts:</b>\n"
+        "Copy any of the quoted affected locations above, send it to the bot using <b>➕ Add Area</b> or <code>/addlocation</code>, "
+        "and check whether you are instantly notified!"
+    )
     await update.message.reply_text(
-        f"📢 <b>TODAY'S POWER OUTAGE ANNOUNCEMENTS</b> 🇪🇹\n\n{full_response}",
+        f"📢 <b>TODAY'S POWER OUTAGE ANNOUNCEMENTS</b> 🇪🇹\n\n{full_response}{tip_text}",
         parse_mode="HTML",
         reply_markup=get_main_keyboard()
     )
