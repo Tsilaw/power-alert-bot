@@ -7,7 +7,7 @@ from flask import Flask
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from telegram import Update
+from telegram import Update, BotCommand, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 from detector import is_outage_announcement, extract_areas, extract_date, extract_time_blocks, is_area_match
@@ -47,6 +47,28 @@ KNOWN_AREAS = [
 
 waiting_for_location = set()
 location_mode = {}  # user_id -> 'set' or 'add'
+
+# ---------- Helper keyboard & menu ----------
+def get_main_keyboard():
+    keyboard = [
+        ["📍 My Status", "📢 Today's Alerts"],
+        ["➕ Add Area", "🔄 Reset Area"],
+        ["⏸️ Pause Alerts"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+async def post_init(application):
+    commands = [
+        BotCommand("status", "Check your saved locations & status"),
+        BotCommand("todayalerts", "See today's power outage announcements"),
+        BotCommand("addlocation", "Add an additional area (Home, Work, etc.)"),
+        BotCommand("setlocation", "Reset and change your area list"),
+        BotCommand("stop", "Pause outage notifications"),
+        BotCommand("start", "Welcome message & bot details"),
+    ]
+    await application.bot.set_my_commands(commands)
+
 
 # ---------- Tiny web server (keeps Render awake) ----------
 app_web = Flask(__name__)
@@ -202,12 +224,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Welcome back! Notifications are ON.\n\n"
             f"📍 Your saved location(s):\n{loc_str}\n\n"
-            "Commands:\n"
-            "/addlocation - Add another location\n"
-            "/setlocation - Reset location list\n"
-            "/todayalerts - See today's outage announcements\n"
-            "/status - Check your settings\n"
-            "/stop - Pause notifications"
+            "Use the quick menu buttons below or the [Menu] button anytime!",
+            reply_markup=get_main_keyboard()
         )
 
 
@@ -253,7 +271,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             location_mode.pop(user_id, None)
             await update.message.reply_text(
                 f"Got it! Saved area: {matched_area}\n\n"
-                "You will be notified about power outages here. Use /addlocation to add more areas."
+                "You will be notified about power outages here. Tap buttons below or [Menu] anytime!",
+                reply_markup=get_main_keyboard()
             )
             await check_todays_announcements_for_user(user_id, matched_area)
         else:
@@ -263,7 +282,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(
                 f"Thanks! We couldn't automatically recognize \"{text}\" as a known area.\n"
-                "It has been sent for review, and you'll be notified once it's confirmed."
+                "It has been sent for review, and you'll be notified once it's confirmed.",
+                reply_markup=get_main_keyboard()
             )
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
@@ -277,8 +297,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     else:
         await update.message.reply_text(
-            "I didn't understand that. Use /setlocation or /addlocation to update your areas, "
-            "or /todayalerts to see today's outage announcements."
+            "Please use the menu buttons below or tap [Menu] to navigate!",
+            reply_markup=get_main_keyboard()
         )
 
 
@@ -302,9 +322,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if pending_text:
-        # Learn the mapping so future users typing this exact text get auto-approved!
         learn_location(pending_text, correct_area)
-        # Also delete the old pending location entry
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -315,10 +333,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.close()
         conn.close()
 
-    # Learn direct name as well
     learn_location(correct_area, correct_area)
-
-    # Add confirmed location
     add_user_location(target_user_id, correct_area, status="confirmed")
 
     await update.message.reply_text(
@@ -328,6 +343,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=target_user_id,
         text=f"Your area has been confirmed as: {correct_area}\nYou will now receive power outage alerts for this area.",
+        reply_markup=get_main_keyboard()
     )
     await check_todays_announcements_for_user(target_user_id, correct_area)
 
@@ -335,7 +351,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     todays = get_todays_announcements()
     if not todays:
-        await update.message.reply_text("No power outage announcements recorded today so far.")
+        await update.message.reply_text("No power outage announcements recorded today so far.", reply_markup=get_main_keyboard())
         return
 
     messages = []
@@ -368,7 +384,8 @@ async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_response = "\n\n═══════════════════\n\n".join(messages)
     await update.message.reply_text(
         f"📢 <b>TODAY'S POWER OUTAGE ANNOUNCEMENTS</b> 🇪🇹\n\n{full_response}",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=get_main_keyboard()
     )
 
 
@@ -380,7 +397,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     cursor.close()
     conn.close()
-    await update.message.reply_text("Notifications paused. Send /start anytime to turn them back on.")
+    await update.message.reply_text("Notifications paused. Send /start anytime to turn them back on.", reply_markup=get_main_keyboard())
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -407,18 +424,14 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"📍 <b>Your Saved Location(s):</b>\n{loc_str}\n\n"
-        f"Notifications: <b>{html.escape(status_text)}</b>\n\n"
-        "Commands:\n"
-        "/addlocation - Add another location\n"
-        "/setlocation - Reset location list\n"
-        "/todayalerts - See today's outage announcements\n"
-        "/stop - Pause notifications",
-        parse_mode="HTML"
+        f"Notifications: <b>{html.escape(status_text)}</b>",
+        parse_mode="HTML",
+        reply_markup=get_main_keyboard()
     )
 
 
 def run_bot():
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("setlocation", setlocation))
     application.add_handler(CommandHandler("addlocation", addlocation))
@@ -426,6 +439,14 @@ def run_bot():
     application.add_handler(CommandHandler("stop", stop))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("approve", approve))
+
+    # Button text handlers
+    application.add_handler(MessageHandler(filters.Regex("^📍 My Status$"), status))
+    application.add_handler(MessageHandler(filters.Regex("^📢 Today's Alerts$"), todayalerts))
+    application.add_handler(MessageHandler(filters.Regex("^➕ Add Area$"), addlocation))
+    application.add_handler(MessageHandler(filters.Regex("^🔄 Reset Area$"), setlocation))
+    application.add_handler(MessageHandler(filters.Regex("^⏸️ Pause Alerts$"), stop))
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.run_polling(stop_signals=None)
 
