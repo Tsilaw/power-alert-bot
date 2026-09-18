@@ -146,16 +146,21 @@ def format_user_notification(location, date_text, matching_blocks, raw_areas_tex
 
 
 async def check_todays_announcements_for_user(user_id, location, todays=None):
-    """When a user's location is newly confirmed, check if anything posted today already matches."""
+    """When a user sets or adds a location, check if anything posted today already matches."""
+    if not location:
+        return
     if todays is None:
         todays = get_todays_announcements()
 
     for announcement_id, raw_text, date_text, areas_text, channel_name, message_id in todays:
-        areas_list = extract_areas(raw_text) if raw_text else areas_text.split("፣ ")
+        extracted = extract_areas(raw_text) if raw_text else []
+        areas_list = extracted if extracted else [a.strip() for a in areas_text.split("፣ ") if a.strip()]
+
         matches = any(
             is_area_match(location, area)
             for area in areas_list
-        )
+        ) or is_area_match(location, areas_text) or (raw_text and is_area_match(location, raw_text))
+
         if matches:
             newly_notified = record_notification(user_id, announcement_id, location)
             if newly_notified:
@@ -289,6 +294,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_keyboard()
             )
             await check_todays_announcements_for_user(user_id, matched_area)
+            if text.strip().lower() != matched_area.strip().lower():
+                await check_todays_announcements_for_user(user_id, text)
         else:
             add_user_location(user_id, text, status="pending")
             waiting_for_location.remove(user_id)
@@ -299,6 +306,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "It has been sent for review, and you'll be notified once it's confirmed.",
                 reply_markup=get_main_keyboard()
             )
+
+            await check_todays_announcements_for_user(user_id, text)
 
             full_name = html.escape(user_obj.full_name or "Unknown")
             username_str = f"@{user_obj.username}" if user_obj.username else "No @username"
