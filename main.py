@@ -145,9 +145,11 @@ def format_user_notification(location, date_text, matching_blocks, raw_areas_tex
     return text
 
 
-async def check_todays_announcements_for_user(user_id, location):
+async def check_todays_announcements_for_user(user_id, location, todays=None):
     """When a user's location is newly confirmed, check if anything posted today already matches."""
-    todays = get_todays_announcements()
+    if todays is None:
+        todays = get_todays_announcements()
+
     for announcement_id, raw_text, date_text, areas_text, channel_name, message_id in todays:
         areas_list = extract_areas(raw_text) if raw_text else areas_text.split("፣ ")
         matches = any(
