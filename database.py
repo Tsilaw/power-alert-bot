@@ -276,11 +276,11 @@ def get_last_announcement_id():
 
 
 def get_todays_announcements():
-    """Returns all announcements saved today (based on when we processed them or within 24h)."""
+    """Returns all announcements saved today (based on when we processed them or within 24h), including channel_name and message_id."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, raw_text, date_text, areas FROM announcements
+        SELECT id, raw_text, date_text, areas, channel_name, message_id FROM announcements
         WHERE created_at >= NOW() - INTERVAL '24 hours' OR created_at::date = CURRENT_DATE
         ORDER BY id DESC
     """)

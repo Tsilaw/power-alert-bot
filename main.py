@@ -91,7 +91,7 @@ async def send_bot_message(chat_id, text, parse_mode=None):
         await http_client.post(url, json=payload)
 
 
-def format_user_notification(location, date_text, matching_blocks, raw_areas_text, is_retroactive=False):
+def format_user_notification(location, date_text, matching_blocks, raw_areas_text, message_id=None, channel_name="eeuethiopia", is_retroactive=False):
     esc_location = html.escape(location)
     esc_date = html.escape(date_text) if date_text else ""
     header = "⚡ <b>POWER OUTAGE ALERT!</b> ⚡" if not is_retroactive else "⚡ <b>EXISTING OUTAGE NOTICE FOR TODAY</b> ⚡"
@@ -126,11 +126,20 @@ def format_user_notification(location, date_text, matching_blocks, raw_areas_tex
 
     date_info = f"📅 <b>Date:</b> {esc_date}\n" if esc_date else ""
 
+    c_name = channel_name or "eeuethiopia"
+    if message_id:
+        post_link = f"https://t.me/{c_name}/{message_id}"
+        link_html = f"🔗 <a href=\"{post_link}\"><b>See Original Channel Post</b></a>\n\n"
+    else:
+        post_link = f"https://t.me/{c_name}"
+        link_html = f"🔗 <a href=\"{post_link}\"><b>Visit EEU Official Channel</b></a>\n\n"
+
     text = (
         f"{header}\n\n"
         f"👤 <b>Your Saved Location:</b> <code>{esc_location}</code>\n"
         f"{date_info}"
         f"{schedule_info}\n\n"
+        f"{link_html}"
         f"⚠️ <b>ATTENTION:</b> There will be a power outage in your area during the time listed above, so please be ready and charge your devices!"
     )
     return text
@@ -139,7 +148,7 @@ def format_user_notification(location, date_text, matching_blocks, raw_areas_tex
 async def check_todays_announcements_for_user(user_id, location):
     """When a user's location is newly confirmed, check if anything posted today already matches."""
     todays = get_todays_announcements()
-    for announcement_id, raw_text, date_text, areas_text in todays:
+    for announcement_id, raw_text, date_text, areas_text, channel_name, message_id in todays:
         areas_list = extract_areas(raw_text) if raw_text else areas_text.split("፣ ")
         matches = any(
             is_area_match(location, area)
@@ -161,6 +170,8 @@ async def check_todays_announcements_for_user(user_id, location):
                     date_text=date_text,
                     matching_blocks=matching_blocks,
                     raw_areas_text=areas_text,
+                    message_id=message_id,
+                    channel_name=channel_name or "eeuethiopia",
                     is_retroactive=True
                 )
                 await send_bot_message(user_id, notification_text, parse_mode="HTML")
@@ -355,7 +366,7 @@ async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     messages = []
-    for ann_id, raw_text, date_text, areas_text in todays:
+    for ann_id, raw_text, date_text, areas_text, channel_name, message_id in todays:
         time_blocks = extract_time_blocks(raw_text)
 
         if time_blocks:
@@ -374,11 +385,18 @@ async def todayalerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             schedule_details = f"📍 <b>Affected Locations:</b>\n{areas_bullets}"
 
         date_line = f"📅 <b>Date:</b> {html.escape(date_text)}\n" if date_text else ""
+        
+        c_name = channel_name or "eeuethiopia"
+        if message_id:
+            link_str = f"\n\n🔗 <a href=\"https://t.me/{c_name}/{message_id}\"><b>See Original Channel Post</b></a>"
+        else:
+            link_str = f"\n\n🔗 <a href=\"https://t.me/{c_name}\"><b>Visit EEU Official Channel</b></a>"
 
         messages.append(
             f"⚡ <b>Announcement #{ann_id}</b>\n"
             f"{date_line}"
             f"{schedule_details}"
+            f"{link_str}"
         )
 
     full_response = "\n\n═══════════════════\n\n".join(messages)
@@ -493,6 +511,8 @@ def run_listener():
                             date_text=date_text,
                             matching_blocks=matching_blocks,
                             raw_areas_text=", ".join(areas),
+                            message_id=message_id,
+                            channel_name=channel_name or "eeuethiopia",
                             is_retroactive=False
                         )
                         await send_bot_message(user_id, notification_text, parse_mode="HTML")
