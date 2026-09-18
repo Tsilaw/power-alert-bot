@@ -306,9 +306,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             admin_alert = (
                 f"⚠️ <b>Unrecognized location needs review:</b>\n\n"
-                f"👤 <b>User:</b> {full_name} ({username_str})\n"
+                f"👤 <b>Name:</b> {full_name}\n"
+                f"🏷️ <b>Username:</b> {username_str}\n"
                 f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-                f"📍 <b>Typed:</b> \"<code>{esc_text}</code>\"\n\n"
+                f"📍 <b>Typed Area:</b> \"<code>{esc_text}</code>\"\n\n"
                 f"To confirm, reply with:\n"
                 f"<code>/approve {user_id} &lt;correct area name&gt;</code>"
             )
