@@ -262,7 +262,8 @@ async def addlocation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_obj = update.effective_user
+    user_id = user_obj.id
     text = update.message.text.strip()
 
     if user_id in waiting_for_location:
@@ -298,15 +299,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "It has been sent for review, and you'll be notified once it's confirmed.",
                 reply_markup=get_main_keyboard()
             )
+
+            full_name = html.escape(user_obj.full_name or "Unknown")
+            username_str = f"@{user_obj.username}" if user_obj.username else "No @username"
+            esc_text = html.escape(text)
+
+            admin_alert = (
+                f"⚠️ <b>Unrecognized location needs review:</b>\n\n"
+                f"👤 <b>User:</b> {full_name} ({username_str})\n"
+                f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+                f"📍 <b>Typed:</b> \"<code>{esc_text}</code>\"\n\n"
+                f"To confirm, reply with:\n"
+                f"<code>/approve {user_id} &lt;correct area name&gt;</code>"
+            )
+
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=(
-                    f"⚠️ Unrecognized location needs review:\n"
-                    f"User ID: {user_id}\n"
-                    f"Typed: \"{text}\"\n\n"
-                    f"To confirm, reply with:\n"
-                    f"/approve {user_id} <correct area name>"
-                ),
+                text=admin_alert,
+                parse_mode="HTML"
             )
     else:
         await update.message.reply_text(
